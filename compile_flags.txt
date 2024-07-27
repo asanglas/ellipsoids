@@ -1,0 +1,6 @@
+-Ithirdparty/raylib/include
+-Lthirdparty/raylib/lib 
+-lraylib 
+-lm
+-Wl,-rpath=thirdparty/raylib/lib 
+-DNRENDER
