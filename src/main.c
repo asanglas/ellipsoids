@@ -4,8 +4,9 @@
 
 #include "ellipsoids.h"
 #include "ellipsoid_obb_2d.h"
+#include "ellipsoid_iterative_points_2d.h"
 
-#define DEBUG 0
+#define DEBUG 1
 
 #ifdef RENDER
 #include "render.h"
@@ -35,7 +36,7 @@ void generate_random_ellipses(Ellipsoid2d* ellipses, u32 count, u32 seed)
 int main()
 {
 
-    u32 seed = 1721908430;
+    // u32 seed = 1721908430;
 
 #ifdef RENDER // Draw
 
@@ -123,8 +124,12 @@ int main()
 #endif
 
     // TESTS
+    u32 seed = 1721908430;
+    Ellipsoid2d ellipses[NUM_ELLIPSOIDS];
+    generate_random_ellipses(ellipses, NUM_ELLIPSOIDS, seed);
 
-    Vec2 points[20];
+    Ellipsoid2d bounding_ellispoid;
+    bounding_ellispoid = compute_bounding_ellipsoid_iterative_2d(ellipses, ARRAY_SIZE(ellipses), .1f);
 
     return 0;
 }
