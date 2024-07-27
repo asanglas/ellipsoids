@@ -17,54 +17,6 @@
 
 // ----------------------------
 //
-// Get unique points (CHECK)
-//
-// ----------------------------
-
-// Comparison function for sorting
-int compare_vec2(const void* a, const void* b)
-{
-    Vec2* pa = (Vec2*)a;
-    Vec2* pb = (Vec2*)b;
-
-    if (pa->x < pb->x)
-        return -1;
-    if (pa->x > pb->x)
-        return 1;
-    if (pa->y < pb->y)
-        return -1;
-    if (pa->y > pb->y)
-        return 1;
-    return 0;
-}
-
-// Function to remove duplicates and return an array with unique points
-void unique_points(Vec2* points, int size, Vec2* unique, int* unique_size)
-{
-    if (size == 0) {
-        *unique_size = 0;
-        return;
-    }
-
-    // Sort the points array
-    qsort(points, size, sizeof(Vec2), compare_vec2);
-
-    // Add the first point to the unique array
-    unique[0] = points[0];
-    int unique_count = 1;
-
-    // Iterate through the sorted points and collect unique points
-    for (int i = 1; i < size; ++i) {
-        if (compare_vec2(&points[i], &points[i - 1]) != 0) {
-            unique[unique_count++] = points[i];
-        }
-    }
-
-    *unique_size = unique_count;
-}
-
-// ----------------------------
-//
 // Linear Algebra functions
 //
 // ----------------------------
@@ -134,6 +86,60 @@ Mat2 mat2x2_muls(Mat2 mat, float s)
     return m;
 }
 
+Vec2 mat2x2_eigenvalues(Mat2 mat)
+{
+    // assume symmetric
+    float a = mat.a11, b = mat.a22, c = mat.a12;
+    float delta = sqrtf(4 * pow(c, 2) + pow(a - b, 2));
+    float lambda1 = (a + b - delta) / 2;
+    float lambda2 = (a + b + delta) / 2;
+    return (Vec2){.x = lambda1, .y = lambda2};
+}
+
+Mat2 mat2x2_eigenvectors(Mat2 mat)
+{
+    // assume symmetric
+    float a = mat.a11, b = mat.a22, c = mat.a12;
+    float delta = sqrtf(4 * pow(c, 2) + pow(a - b, 2));
+    float lambda1 = (a + b - delta) / 2;
+    float lambda2 = (a + b + delta) / 2;
+
+    float v1_x = (lambda2 - b) / c;
+    float v1_y = 1;
+    float v2_x = (lambda1 - b) / c;
+    float v2_y = 1;
+
+    return (Mat2){.a11 = v1_x, .a12 = v1_y, .a21 = v2_x, .a22 = v2_y};
+}
+
+// ----------------------------
+//
+// Convert Q, c to center, halfdims and angle
+//
+// ----------------------------
+
+Ellipsoid2d ellispoid_from_QcForm(Mat2 Q, Vec2 c)
+{
+
+    Ellipsoid2d el;
+    Vec2 eigenvalues = mat2x2_eigenvalues(Q);
+    Mat2 eigenvectors = mat2x2_eigenvectors(Q);
+
+    float angle = atan2(eigenvectors.a22, eigenvectors.a21);
+    Vec2 half_dims = {.x = 1 / sqrt(eigenvalues.x), .y = 1 / sqrt(eigenvalues.y)};
+
+    el.center = c;
+    el.half_dims = half_dims;
+    el.angle = angle * 180 / PI;
+    return el;
+}
+
+// ----------------------------
+//
+// The algorithm
+//
+// ----------------------------
+
 void find_supporting_points(Vec2* points, u32 n_points, Vec2 direction, Vec2* min_point, Vec2* max_point)
 {
     float min_projection = INFINITY, max_projection = -INFINITY;
@@ -176,7 +182,11 @@ void initial_volume_approximation(Vec2* aprox, Vec2* points, u32 n_points)
 
 Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32 count, float epsilon)
 {
-    Ellipsoid2d bounding_ellipsoid;
+
+    if (count == 0) {
+        Ellipsoid2d be;
+        return be;
+    }
 
     // 1. Compute the vertices of the bounding boxes for each children ellipsoid
     Vec2 points[count * 4];
@@ -198,9 +208,9 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
     Vec2 X[1000]; // TODO: actually only is needed 2*d = 4; But we will keep adding... do it dynamic?
 
     initial_volume_approximation(X, points, ARRAY_SIZE(points));
-    for (u32 i = 0; i < 4; i += 1) {
-        printf("point %u: {%f, %f}\n", i, X[i].x, X[i].y);
-    }
+    // for (u32 i = 0; i < 4; i += 1) {
+    //     printf("point %u: {%f, %f}\n", i, X[i].x, X[i].y);
+    // }
 
     // Algorithm 4.1 of the paper (adapted to points)
 
@@ -211,12 +221,12 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
     u[0] = 0.25f, u[1] = 0.25f, u[2] = 0.25f, u[3] = 0.25f;
 
     // 2. Compute w0
-    Vec2 w0 = {.x = 0.f, .x = 0.f};
+    Vec2 w0 = {.x = 0.f, .y = 0.f};
     for (u32 i = 0; i < 4; i += 1) {
         w0.x += X[i].x * u[i];
         w0.y += X[i].y * u[i];
     }
-    printf("w0: {%f, %f}\n", w0.x, w0.y);
+    // printf("w0: {%f, %f}\n", w0.x, w0.y);
 
     // 3. Compute M0
     Mat2 M0 = {.a11 = 0.f, .a12 = 0.f, .a21 = 0.f, .a22 = 0.f};
@@ -227,7 +237,7 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
     }
     M0 = mat2x2_muls(mat2x2_muls(M0, 2), 0.001f); // trick for the inverse to not get small values.
     M0 = mat2_inverse(M0);                        // The real M should be multiplied by 0.001;
-    printf("M: { {%.8f, %.8f}, {%.8f, %.8f}}\n", M0.a11, M0.a12, M0.a21, M0.a22);
+    // printf("M: { {%.8f, %.8f}, {%.8f, %.8f}}\n", M0.a11, M0.a12, M0.a21, M0.a22);
 
     // 4. Compute x^2n+1. Here we adapt it to compute the farthest point from the center of the ellipse
     float max_distance = -INFINITY, distance = -INFINITY;
@@ -241,20 +251,20 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
         }
     }
     Vec2 x2n1 = points[max_idx];
-    printf("x2n1: {%f, %f}\n", x2n1.x, x2n1.y);
+    // printf("x2n1: {%f, %f}\n", x2n1.x, x2n1.y);
 
     // 5. Add this farthest point to X0
     X[4] = x2n1;
     // TODO: check uniques in X!
 
-    for (u32 i = 0; i < ARRAY_SIZE(points); i++) {
-        printf(" X[%u]: (%f, %f)", i, X[i].x, X[i].y);
-    }
+    // for (u32 i = 0; i < ARRAY_SIZE(points); i++) {
+    //     printf(" X[%u]: (%f, %f)", i, X[i].x, X[i].y);
+    // }
 
     // 6. Compute eps0, to check the error made. This has a problem. And it is the floating point precision.... how to solve it?
     Vec2 v = {.x = x2n1.x - w0.x, .y = x2n1.y - w0.y};
     float epsk = -1 + vec2vec2_dot(v, mat2x2vec2_mul(M0, v)) * 1e-3;
-    printf("eps0: %f\n", epsk); // we get 0.479007 for the test. In Mathematica we get 0.478976
+    // printf("eps0: %f\n", epsk); // we get 0.479007 for the test. In Mathematica we get 0.478976
 
     u32 k = 0;
     Mat2 M = {.a11 = 0.f, .a12 = 0.f, .a21 = 0.f, .a22 = 0.f};
@@ -264,7 +274,7 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
             break;
         // compute beta
         float beta = epsk / (3 * (1 + epsk));
-        printf("beta: %f\n", beta);
+        // printf("beta: %f\n", beta);
         // update k
         k += 1;
         // update u
@@ -273,10 +283,10 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
         }
         u[4 + k - 1] = beta;
 
-        for (u32 i = 0; i < 4 + k; i += 1) {
-            printf(" u%u: %f", i, u[i]);
-        }
-        printf("\n");
+        // for (u32 i = 0; i < 4 + k; i += 1) {
+        //     printf(" u%u: %f", i, u[i]);
+        // }
+        // printf("\n");
 
         // compute wk
         w.x = 0.f, w.y = 0.f;
@@ -284,7 +294,7 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
             w.x += X[i].x * u[i];
             w.y += X[i].y * u[i];
         }
-        printf("w%u: {%f, %f}\n", k, w.x, w.y);
+        // printf("w%u: {%f, %f}\n", k, w.x, w.y);
 
         // comute Mk
         M.a11 = 0.f, M.a12 = 0.f, M.a21 = 0.f, M.a22 = 0.f;
@@ -295,7 +305,7 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
         }
         M = mat2x2_muls(mat2x2_muls(M, 2), 0.001f); // trick for the inverse to not get small values.
         M = mat2_inverse(M);                        // The real M should be multiplied by 0.001;
-        printf("M%u: { {%.8f, %.8f}, {%.8f, %.8f}}\n", k, M.a11, M.a12, M.a21, M.a22);
+        // printf("M%u: { {%.8f, %.8f}, {%.8f, %.8f}}\n", k, M.a11, M.a12, M.a21, M.a22);
 
         // compute x^2n+1+k. Here we adapt it to compute the farthest point from the center of the ellipse
         float max_distance = -INFINITY, distance = -INFINITY;
@@ -309,29 +319,37 @@ Ellipsoid2d compute_bounding_ellipsoid_iterative_2d(Ellipsoid2d* ellipsoids, u32
             }
         }
         Vec2 x2n1k = points[max_idx];
-        printf("x2n1%u: {%f, %f}\n", k, x2n1k.x, x2n1k.y);
+        // printf("x2n1%u: {%f, %f}\n", k, x2n1k.x, x2n1k.y);
 
         // add the x2n1k to the X set
         X[4 + k] = x2n1k;
         for (u32 i = 0; i < ARRAY_SIZE(points); i++) {
-            printf(" X[%u]: (%f, %f)", i, X[i].x, X[i].y);
+            // printf(" X[%u]: (%f, %f)", i, X[i].x, X[i].y);
         }
 
         // update the epsk
         Vec2 v = {.x = x2n1k.x - w.x, .y = x2n1k.y - w.y};
         epsk = -1 + vec2vec2_dot(v, mat2x2vec2_mul(M, v)) * 1e-3;
-        printf("eps%u: %f\n", k, epsk); // floating point error
+        // printf("eps%u: %f\n", k, epsk); // floating point error
 
-        printf("---------------------\n");
-        if (k == ARRAY_SIZE(points) + 6)
-            break;
+        // printf("---------------------\n");
+        // if (k == ARRAY_SIZE(points) + 6)
+        //     break;
     }
 
     M = mat2x2_muls(M, 0.001);
-    printf("Number of iterations: %u\n", k);
-    printf("epsk: %f\n", epsk);
-    printf("M%u: { {%.8f, %.8f}, {%.8f, %.8f}}\n", k, M.a11, M.a12, M.a21, M.a22);
-    printf("w%u: {%f, %f}\n", k, w.x, w.y);
+    M = mat2x2_muls(M, 1.f / (1 + epsk));
+    // printf("Number of iterations: %u\n", k);
+    // printf("epsk: %f\n", epsk);
+    // printf("M%u: { {%.8f, %.8f}, {%.8f, %.8f}}\n", k, M.a11, M.a12, M.a21, M.a22);
+    // printf("w%u: {%f, %f}\n", k, w.x, w.y);
+
+    Ellipsoid2d bounding_ellipsoid = ellispoid_from_QcForm(M, w);
+
+    // printf("-----------------\n");
+    // printf("\tCenter: (%f, %f)\n", bounding_ellipsoid.center.x, bounding_ellipsoid.center.y);
+    // printf("\tHalf dims: (%f, %f)\n", bounding_ellipsoid.half_dims.x, bounding_ellipsoid.half_dims.y);
+    // printf("\tAngle (rad): %f\n", bounding_ellipsoid.angle / 180 * PI);
 
     return bounding_ellipsoid;
 }

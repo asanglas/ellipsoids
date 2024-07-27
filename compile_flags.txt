@@ -3,4 +3,4 @@
 -lraylib 
 -lm
 -Wl,-rpath=thirdparty/raylib/lib 
--DNRENDER
+-DRENDER
